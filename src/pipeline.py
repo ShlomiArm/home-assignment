@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from noaa.client import NOAAClient
+from noaa import NOAAClient
 from utils import date_ranges
 from pyspark.sql import DataFrame
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType
