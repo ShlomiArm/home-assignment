@@ -1,0 +1,48 @@
+repos:
+  # Basic hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  # Python: format + lint (ruff)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.4
+    hooks:
+      # Lint
+      - id: ruff
+        args: [--fix]
+      # Format (ruff formatter)
+      - id: ruff-format
+
+  # Python: type checks (optional but useful)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.1
+    hooks:
+      - id: mypy
+        args: ["--ignore-missing-imports"]
+        additional_dependencies:
+          - types-requests
+        # If you have a src layout, you can limit:
+        # files: ^(src|tests)/
+
+  # Dockerfile lint (hadolint)
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+
+  # docker-compose validation/lint-ish (docker compose config)
+  # This runs 'docker compose config' to ensure compose files parse.
+  - repo: local
+    hooks:
+      - id: docker-compose-config
+        name: Validate docker-compose files
+        entry: bash -c 'docker compose -f docker-compose.yml config -q'
+        language: system
+        pass_filenames: false
+        files: (^|/)(docker-compose\.ya?ml|compose\.ya?ml)$

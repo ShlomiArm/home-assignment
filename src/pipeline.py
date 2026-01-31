@@ -1,18 +1,24 @@
-from typing import Dict, List
 from pyspark.sql import SparkSession
 from noaa.client import NOAAClient
-from  noaa.client import NOAAClient
 from utils import date_ranges
-from datetime import datetime,date
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, TimestampType
+from pyspark.sql import DataFrame
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType
 from pyspark.sql.functions import (
-    col, lit, current_timestamp, split, when,
-    unix_timestamp,to_date,to_timestamp, count, max,sum
+    col,
+    lit,
+    current_timestamp,
+    split,
+    when,
+    unix_timestamp,
+    to_date,
+    to_timestamp,
+    count,
+    max,
+    sum,
 )
 
 
-def normalize_and_validate(df: DataFrame) -> (DataFrame, DataFrame):
+def normalize_and_validate(df: DataFrame) -> tuple[DataFrame, DataFrame]:
     """
     Returns (good_df, bad_df)
     - required normalizations:
@@ -23,22 +29,29 @@ def normalize_and_validate(df: DataFrame) -> (DataFrame, DataFrame):
       required fields + parseable date + non-negative value
     """
 
-
     # parse timestamp robustly (add patterns if needed
 
     df2 = (
-        df
-        .withColumn("eventtime",  to_timestamp(col("date"), "yyyy-MM-dd'T'HH:mm:ss"))                      # TIMESTAMP
-        .withColumn("eventdate", to_date(col("eventtime")))     # DATE
-         .drop("date")
+        df.withColumn(
+            "eventtime", to_timestamp(col("date"), "yyyy-MM-dd'T'HH:mm:ss")
+        )  # TIMESTAMP
+        .withColumn("eventdate", to_date(col("eventtime")))  # DATE
+        .drop("date")
         .withColumn(
             "attributes_arr",
-            when(col("attributes").isNull(), lit(None)).otherwise(split(col("attributes"), ","))
+            when(col("attributes").isNull(), lit(None)).otherwise(
+                split(col("attributes"), ",")
+            ),
         )
         .drop("attributes")
         # epoch ms from parsed timestamp (NOT from raw string)
-        .withColumn("date_epoch_ms", (unix_timestamp(col("eventtime")) * 1000).cast(LongType()))
-        .withColumn("ingestion_ts", (unix_timestamp(current_timestamp()) * 1000).cast(LongType()))
+        .withColumn(
+            "date_epoch_ms", (unix_timestamp(col("eventtime")) * 1000).cast(LongType())
+        )
+        .withColumn(
+            "ingestion_ts",
+            (unix_timestamp(current_timestamp()) * 1000).cast(LongType()),
+        )
     )
 
     dfv = df2.withColumn(
@@ -49,13 +62,14 @@ def normalize_and_validate(df: DataFrame) -> (DataFrame, DataFrame):
         .when(col("station").isNull(), lit("station is null"))
         .when(col("value").isNull(), lit("value is null"))
         .when(col("value") < 0, lit("value < 0"))
-        .otherwise(lit(None))
+        .otherwise(lit(None)),
     )
 
     good = dfv.filter(col("bad_reason").isNull()).drop("bad_reason")
     bad = dfv.filter(col("bad_reason").isNotNull())
 
     return good, bad
+
 
 class Pipeline:
     def __init__(
@@ -68,7 +82,7 @@ class Pipeline:
         bad_table_name: str = "bad",
         missing_metrics_teable_name: str = "missing_metrics",
         pipeline_state_name: str = "pipeline_state",
-        chunkdays: int = 10
+        chunkdays: int = 10,
     ):
         self.spark = spark
         self.noaa = noaa
@@ -77,28 +91,37 @@ class Pipeline:
         self.good_table_name = good_table_name
         self.bad_table_name = bad_table_name
         self.s3_base_location = f"s3a://{catalog}/{db}"
-        self.chunkdays= chunkdays
+        self.chunkdays = chunkdays
         self.missing_metrics_teable_name = missing_metrics_teable_name
         self.pipeline_state_name = pipeline_state_name
-        
-        self.RAW_SCHEMA = StructType([
-            StructField("date", StringType(), True),
-            StructField("datatype", StringType(), True),
-            StructField("station", StringType(), True),
-            StructField("attributes", StringType(), True),
-            StructField("value", IntegerType(), True),
-        ])
-    
+
+        self.RAW_SCHEMA = StructType(
+            [
+                StructField("date", StringType(), True),
+                StructField("datatype", StringType(), True),
+                StructField("station", StringType(), True),
+                StructField("attributes", StringType(), True),
+                StructField("value", IntegerType(), True),
+            ]
+        )
+
     def init(self):
         """
         Ensure Iceberg tables exist with explicit locations.
         """
-        spark=self.spark
-        #print("Spark version:", spark.version)
-        print("iceberg catalog class:", spark.conf.get("spark.sql.catalog.iceberg", "MISSING"))
-        print("iceberg catalog-impl:", spark.conf.get("spark.sql.catalog.iceberg.catalog-impl", "MISSING"))
-        print("iceberg uri:", spark.conf.get("spark.sql.catalog.iceberg.uri", "MISSING"))
-
+        spark = self.spark
+        # print("Spark version:", spark.version)
+        print(
+            "iceberg catalog class:",
+            spark.conf.get("spark.sql.catalog.iceberg", "MISSING"),
+        )
+        print(
+            "iceberg catalog-impl:",
+            spark.conf.get("spark.sql.catalog.iceberg.catalog-impl", "MISSING"),
+        )
+        print(
+            "iceberg uri:", spark.conf.get("spark.sql.catalog.iceberg.uri", "MISSING")
+        )
 
         # Namespace
         spark.sql(f"""
@@ -121,7 +144,7 @@ class Pipeline:
             )
             USING iceberg
             LOCATION '{self.s3_base_location}/{self.good_table_name}'
-            PARTITIONED BY (eventdate);    
+            PARTITIONED BY (eventdate);
         """)
 
         # -------------------------
@@ -140,7 +163,7 @@ class Pipeline:
             USING iceberg
             LOCATION '{self.s3_base_location}/{self.bad_table_name}'
         """)
-        
+
         spark.sql(f"""
             CREATE TABLE IF NOT EXISTS {self.catalog}.{self.db}.{self.missing_metrics_teable_name} (
             station STRING,
@@ -152,7 +175,7 @@ class Pipeline:
             USING iceberg
             LOCATION '{self.s3_base_location}/{self.missing_metrics_teable_name}'
         """)
-        
+
         spark.sql(f"""
             CREATE TABLE IF NOT EXISTS {self.catalog}.{self.db}.{self.pipeline_state_name} (
             pipeline_name STRING,
@@ -162,7 +185,7 @@ class Pipeline:
             USING iceberg
             LOCATION '{self.s3_base_location}/{self.pipeline_state_name}'
         """)
-        
+
         spark.sql(f"""
             MERGE INTO  {self.catalog}.{self.db}.{self.pipeline_state_name} t
             USING (
@@ -174,45 +197,48 @@ class Pipeline:
             ON t.pipeline_name = s.pipeline_name
             WHEN NOT MATCHED THEN INSERT *
         """)
-        
-        
-            
-        
-        
-        
-        
-    def ingest(self,startdate:str,totaldays: int):
+
+    def ingest(self, startdate: str, totaldays: int):
         def push(buffer):
             df = self.spark.createDataFrame(chunk, schema=self.RAW_SCHEMA)
-            print("start write xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",len(chunk))
+            print("start write xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", len(chunk))
             good, bad = normalize_and_validate(df)
             # Write to Iceberg (append)
-            (good
-            .writeTo(f"{self.catalog}.{self.db}.{self.good_table_name}").overwritePartitions()
+            (
+                good.writeTo(
+                    f"{self.catalog}.{self.db}.{self.good_table_name}"
+                ).overwritePartitions()
             )
-            #bad.writeTo(f"{self.catalog}.{self.db}.{self.bad_table_name}").append()
+            # bad.writeTo(f"{self.catalog}.{self.db}.{self.bad_table_name}").append()
             print("done writing XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-        
-        for startday,endday in date_ranges(startdate,totaldays,self.chunkdays):
+
+        for startday, endday in date_ranges(startdate, totaldays, self.chunkdays):
             while True:
-                chunk=[]
-                for batch in self.noaa.fetch_date_range(startday,endday):
+                chunk = []
+                for batch in self.noaa.fetch_date_range(startday, endday):
                     chunk += batch
-                    print(f"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx {startday,endday} reading {len(chunk)}")
+                    print(
+                        f"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx {startday, endday} reading {len(chunk)}"
+                    )
                 push(chunk)
                 break
-           
-            
+
     def transform(self):
         def get_last_watermark() -> int:
-            row = (self.spark.table(f"{self.catalog}.{self.db}.{self.pipeline_state_name}")
+            row = (
+                self.spark.table(f"{self.catalog}.{self.db}.{self.pipeline_state_name}")
                 .filter(col("pipeline_name") == "{self.pipeline_state_name}")
                 .select("last_ingestion_ts_ms")
-                .collect())
+                .collect()
+            )
             return int(row[0]["last_ingestion_ts_ms"]) if row else 0
 
         def set_last_watermark(new_wm: int) -> None:
-            now_ms = int(self.spark.sql("SELECT cast(unix_millis(current_timestamp()) as bigint) AS x").collect()[0]["x"])
+            now_ms = int(
+                self.spark.sql(
+                    "SELECT cast(unix_millis(current_timestamp()) as bigint) AS x"
+                ).collect()[0]["x"]
+            )
             self.spark.sql(f"""
                 MERGE INTO {self.catalog}.{self.db}.{self.pipeline_state_name} t
                 USING (SELECT
@@ -229,22 +255,24 @@ class Pipeline:
 
         last_wm = get_last_watermark()
 
-        src = (self.spark.table(f"{self.catalog}.{self.db}.{self.good_table_name}")
+        src = (
+            self.spark.table(f"{self.catalog}.{self.db}.{self.good_table_name}")
             .filter(col("ingestion_ts") > lit(last_wm))
-            .select("station", "value", "ingestion_ts"))
+            .select("station", "value", "ingestion_ts")
+        )
 
         # If there is no new data, exit cleanly
         if src.limit(1).count() == 0:
             return
 
         # Aggregate only the new batch
-        batch_agg = (src.groupBy("station")
-                    .agg(
-                        count(lit(1)).cast("bigint").alias("batch_total"),
-                        sum(when(col("value") == lit(99999), lit(1)).otherwise(lit(0)))
-                        .cast("bigint").alias("batch_missing"),
-                        max("ingestion_ts").cast("bigint").alias("batch_max_ingestion_ts_ms")
-                    ))
+        batch_agg = src.groupBy("station").agg(
+            count(lit(1)).cast("bigint").alias("batch_total"),
+            sum(when(col("value") == lit(99999), lit(1)).otherwise(lit(0)))
+            .cast("bigint")
+            .alias("batch_missing"),
+            max("ingestion_ts").cast("bigint").alias("batch_max_ingestion_ts_ms"),
+        )
 
         # Create a temp view for MERGE
         batch_agg.createOrReplaceTempView("batch_station_missing")
@@ -288,5 +316,7 @@ class Pipeline:
         """)
 
         # Advance watermark to max ingestion_ts_ms seen in this run
-        new_wm = batch_agg.agg(max("batch_max_ingestion_ts_ms").alias("m")).collect()[0]["m"]
+        new_wm = batch_agg.agg(max("batch_max_ingestion_ts_ms").alias("m")).collect()[
+            0
+        ]["m"]
         set_last_watermark(int(new_wm))

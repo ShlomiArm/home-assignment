@@ -52,8 +52,8 @@ Inspect the Iceberg table and apply necessary maintenance actions such as snapsh
 ---
 
 # **3. Architecture Diagram (the real deal)**
-Consider this basic data flow as a prototype for production purposes. 
-Add a simple diagram describing the data flow with the modifications needed to support production grade systems. 
+Consider this basic data flow as a prototype for production purposes.
+Add a simple diagram describing the data flow with the modifications needed to support production grade systems.
 Focus on relations and structures.
 Any format acceptable.
 
@@ -61,7 +61,7 @@ Any format acceptable.
 
 # **4. SQL Sanity Checks**
 Provide an SQL queries proving the data is ingested correctly.
-Provide an SQL query proving the trasformed data is valid. 
+Provide an SQL query proving the trasformed data is valid.
 
 ---
 
