@@ -1,0 +1,140 @@
+services:
+  trino-coordinator:
+    image: trinodb/trino:478
+    container_name: trino-coordinator
+    volumes:
+      - ./coordinator/jvm.config:/etc/trino/jvm.config
+      - ./coordinator/config.properties:/etc/trino/config.properties
+      - ./iceberg.properties:/etc/trino/catalog/iceberg.properties
+    depends_on:
+      - rest
+    ports:
+      - "8080:8080"
+    networks:
+      - trino-nw
+    restart: on-failure
+    healthcheck:
+      test: [ "CMD-SHELL", "trino --version" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  trino-worker:
+    image: trinodb/trino:478
+    volumes:
+      - ./workers/jvm.config:/etc/trino/jvm.config
+      - ./workers/config.properties:/etc/trino/config.properties
+      - ./iceberg.properties:/etc/trino/catalog/iceberg.properties
+    depends_on:
+      - rest
+      - trino-coordinator
+    networks:
+      - trino-nw
+    restart: on-failure
+    healthcheck:
+      test: [ "CMD-SHELL", "trino --version" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rest:
+    image: tabulario/iceberg-rest:1.6.0
+    mem_limit: "1G"
+    container_name: iceberg-rest
+    networks:
+      - trino-nw
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8183:8183"
+    restart: on-failure
+    environment:
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_URI: jdbc:postgresql://postgres/iceberg_catalog
+      CATALOG_JDBC_USER: admin
+      CATALOG_JDBC_PASSWORD: password
+      REST_PORT: 8183
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio123
+      AWS_REGION: us-east-1
+      CATALOG_S3_ENDPOINT: http://minio:9000
+
+  postgres:
+    image: postgres:17.5
+    container_name: postgres
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: iceberg_catalog
+      POSTGRES_HOST_AUTH_METHOD: md5
+    ports:
+      - "5432:5432"
+    networks:
+      - trino-nw
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U admin -d iceberg_catalog" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    mem_limit: "1G"
+    container_name: minio
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data:/data
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+      MINIO_DOMAIN: minio
+    command: [ "server", "/data", "--console-address", ":9001" ]
+    networks:
+      trino-nw:
+        aliases:
+          - iceberg.minio
+
+  mc:
+    image: minio/mc:latest
+    mem_limit: "1G"
+    container_name: mc
+    networks:
+      - trino-nw
+    environment:
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio123
+      AWS_REGION: us-east-1
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+        echo 'Waiting for MinIO to be ready...';
+        until mc alias set minio http://minio:9000 minio minio123; do
+          echo '...waiting for MinIO...';
+          sleep 2;
+        done;
+
+        echo 'Creating bucket...';
+        mc mb -p minio/iceberg || echo 'Bucket already exists';
+
+        echo 'Setting bucket policy (private)...';
+        mc anonymous set public minio/iceberg;
+
+        tail -f /dev/null
+      "
+
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  trino-nw:
+    driver: bridge

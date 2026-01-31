@@ -1,0 +1,4 @@
+pyspark==3.5.8
+requests==2.32.4
+urllib3==2.2.3
+trino == 0.330.0
