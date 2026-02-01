@@ -155,9 +155,9 @@ Make sure the following are running:
 
 docker-compose -f datalake/trino/docker-compose.yaml up
 
-export NOAA_TOKEN=your_token_here
-export PIPELINE_START_DAY: <OPTIONAL. Default is `2010-05-01`>
-export PIPELINE_DAYS_TO_INGEST: <OPTIONAL. Default is `30`>
+export NOAA_TOKEN= <NOAA Token. Requierd>
+export PIPELINE_START_DAY = <OPTIONAL. Default is `2010-05-01`>
+export PIPELINE_DAYS_TO_INGEST = <OPTIONAL. Default is `30`>
 
 docker-compose up --build
 ```
