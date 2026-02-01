@@ -2,6 +2,7 @@ from noaa.client import NOAAClient
 from config import NOAAConfig, PipelineConfig
 from pipeline import Pipeline
 from pyspark.sql import SparkSession
+import os
 
 
 def init(pipeline: Pipeline):
@@ -44,7 +45,11 @@ def main():
     p = Pipeline(spark, NOAAClient(NOAAConfig()), PipelineConfig())
     init(p)
 
-    ingest(p, startdate="2010-05-01", totaldays=30)
+    ingest(
+        p,
+        startdate=os.getenv("PIPELINE_START_DAY"),
+        totaldays=int(os.getenv("PIPELINE_DAYS_TO_INGEST")),
+    )
     transform(p)
     # maintain(p)
 

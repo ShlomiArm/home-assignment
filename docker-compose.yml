@@ -2,7 +2,7 @@ services:
   spark_submit:
     build:
       context: .
-      dockerfile: Dockerfile.spark
+      dockerfile: Dockerfile
     container_name: spark-submit
     working_dir: /opt/app
     volumes:
@@ -10,6 +10,8 @@ services:
       - ivy_cache:/opt/ivy
     environment:
       NOAA_TOKEN: ${NOAA_TOKEN}
+      PIPELINE_START_DAY: ${PIPELINE_START_DAY:-2010-05-01}
+      PIPELINE_DAYS_TO_INGEST: ${PIPELINE_DAYS_TO_INGEST:-30}
       HOME: /opt
       PYSPARK_PYTHON: python3
       PYSPARK_DRIVER_PYTHON: python3

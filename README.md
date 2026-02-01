@@ -115,14 +115,28 @@ Invalid rows → **bad table**
 
 ### Environment Variable
 ```bash
-export NOAA_TOKEN=<your_noaa_api_token>
+  NOAA_TOKEN: ${NOAA_TOKEN}
+  PIPELINE_START_DAY: ${PIPELINE_START_DAY:-2010-05-01}
+  PIPELINE_DAYS_TO_INGEST: ${PIPELINE_DAYS_TO_INGEST:-30}
 ```
+
+- **`NOAA_TOKEN`** *(required)*
+  NOAA API authentication token.
+  This variable has **no default** and must be provided by the user.
+
+- **`PIPELINE_START_DAY`** *(optional, default: `2010-05-01`)*
+  Start date for ingestion, in `YYYY-MM-DD` format.
+
+- **`PIPELINE_DAYS_TO_INGEST`** *(optional, default: `30`)*
+  Number of days to ingest starting from `PIPELINE_START_DAY`.
+
+If `PIPELINE_START_DAY` or `PIPELINE_DAYS_TO_INGEST` are not set, the pipeline will ingest
+**30 days starting from `2010-05-01`**.
 
 ### Key Config Files
 - `config.py`
   - `NOAAConfig`: API settings, token, retries
   - `PipelineConfig`: table names, chunk size, retention
-  - `SparkConfig`: Iceberg + MinIO configuration
 - `client.py`: NOAA API client with retries & pagination
 - `pipeline.py`: core pipeline logic
 - `utils.py`: date range utilities
@@ -139,10 +153,13 @@ Make sure the following are running:
 ### 2. Run the Pipeline
 ```bash
 
-docker compose -f datalake/trino/docker-compose.yaml up
+docker-compose -f datalake/trino/docker-compose.yaml up
 
 export NOAA_TOKEN=your_token_here
-docker compose up
+export PIPELINE_START_DAY: <OPTIONAL. Default is `2010-05-01`>
+export PIPELINE_DAYS_TO_INGEST: <OPTIONAL. Default is `30`>
+
+docker-compose up --build
 ```
 
 Default behavior in `main.py`:
