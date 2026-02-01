@@ -1,18 +1,29 @@
-FROM apache/spark:3.5.1-python3
+# Apache Spark with Java 11 + Python
+FROM apache/spark:3.5.1-scala2.12-java11-python3-ubuntu
 
 USER root
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3-pip curl && \
-    rm -rf /var/lib/apt/lists/*
+# Install pip (usually present, but ensure)
+RUN apt-get update \
+  && apt-get install -y python3-pip \
+  && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r /tmp/requirements.txt && \
-    mkdir -p /opt/jobs
+# App directory
+WORKDIR /opt/app
 
-COPY src/ /opt/jobs
-WORKDIR /opt/jobs
+# Install Python dependencies
+COPY requirements.txt /opt/app/requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Ensure Spark uses the container python
-ENV PYSPARK_PYTHON=/usr/bin/python3
+# Fix Ivy cache issue (/nonexistent/.ivy2)
+RUN mkdir -p /opt/ivy \
+  && chmod -R 777 /opt/ivy
+
+# Optional: copy source (you can also mount at runtime)
+COPY src/ /opt/app/src/
+
+# Spark runs as user "spark"
+USER spark
+
+# IMPORTANT: set HOME to writable location
+ENV HOME=/opt/ivy

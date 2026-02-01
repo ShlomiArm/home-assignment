@@ -1,22 +1,56 @@
 services:
-  spark-submit:
-    build:
-      context: ./
-      dockerfile: Dockerfile
-    container_name: spark-submit
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
     volumes:
-      - ./src:/opt/jobs
+      - minio-data:/data
+
+  rest:
+    image: apache/iceberg-rest:latest
+    container_name: rest
+    depends_on:
+      - minio
+    environment:
+      AWS_ACCESS_KEY_ID: minio
+      AWS_SECRET_ACCESS_KEY: minio123
+      AWS_REGION: us-east-1
+      CATALOG_WAREHOUSE: s3://iceberg/
+      S3_ENDPOINT: http://minio:9000
+      S3_PATH_STYLE_ACCESS: "true"
+    ports:
+      - "8183:8183"
+
+  spark_submit:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-submit
+    working_dir: /opt/app
+    volumes:
+      - ./:/opt/app
+    environment:
+      NOAA_TOKEN: jVHziZKyvmrtqylHvUyOQfSmnNMltSMi
+      PYSPARK_PYTHON: python3
+    depends_on:
+      - minio
+      - rest
     entrypoint: ["/bin/bash", "-lc"]
     command: >
-      /opt/bitnami/spark/bin/spark-submit
-      --packages
-        org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,
-        org.apache.hadoop:hadoop-aws:3.3.4
+      spark-submit
+      --master local[4]
+      --driver-memory 4g
+      --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,org.apache.hadoop:hadoop-aws:3.3.4
       --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
       --conf spark.sql.catalog.iceberg=org.apache.iceberg.spark.SparkCatalog
       --conf spark.sql.catalog.iceberg.catalog-impl=org.apache.iceberg.rest.RESTCatalog
       --conf spark.sql.catalog.iceberg.uri=http://rest:8183
-      --conf spark.sql.catalog.iceberg.io-impl=org.apache.iceberg.hadoop.HadoopFileIO
       --conf spark.sql.catalog.iceberg.warehouse=s3a://iceberg/
       --conf spark.hadoop.fs.s3a.endpoint=http://minio:9000
       --conf spark.hadoop.fs.s3a.path.style.access=true
@@ -24,4 +58,8 @@ services:
       --conf spark.hadoop.fs.s3a.secret.key=minio123
       --conf spark.hadoop.fs.s3a.connection.ssl.enabled=false
       --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem
-      /opt/jobs/main.py
+      --conf spark.hadoop.fs.s3a.aws.credentials.provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
+      src/main.py
+
+volumes:
+  minio-data:

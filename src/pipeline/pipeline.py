@@ -3,6 +3,7 @@ from noaa import NOAAClient
 from config import PipelineConfig
 from utils import date_ranges
 from pyspark.sql import DataFrame
+from typing import Tuple
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType
 from pyspark.storagelevel import StorageLevel
 from pyspark.sql.functions import (
@@ -19,7 +20,7 @@ from pyspark.sql.functions import (
 )
 
 
-def normalize_and_validate(df: DataFrame) -> tuple[DataFrame, DataFrame]:
+def normalize_and_validate(df: DataFrame) -> Tuple[DataFrame, DataFrame]:
     """
     Returns (good_df, bad_df)
     - required normalizations:

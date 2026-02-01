@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pyspark.sql import SparkSession
-from typing import Dict, List
+from typing import Dict, List, Optional
 import os
 
 
@@ -11,7 +11,7 @@ class NOAAConfig:
     default_limit: int = 1000
     sleep_s: float = 0.1
     dataset_id: str = "PRECIP_15"
-    token: str | None = os.getenv("NOAA_TOKEN")
+    token: Optional[str] = os.getenv("NOAA_TOKEN")
 
 
 @dataclass
