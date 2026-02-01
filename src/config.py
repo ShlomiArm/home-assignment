@@ -14,6 +14,19 @@ class NOAAConfig:
     token: str | None = os.getenv("NOAA_TOKEN")
 
 
+@dataclass
+class PipelineConfig:
+    catalog: str = "iceberg"
+    db: str = "assigment"
+    good_table_name: str = "good"
+    bad_table_name: str = "bad"
+    missing_metrics_table_name: str = "missing_metrics"
+    pipeline_state_name: str = "pipeline_state"
+    chunkdays: int = 10
+    tgt_size: int = 128 * 1024 * 1024
+    snapshot_days: int = 3
+
+
 class SparkConfig:
     def __init__(self):
         self.packages: List[str] = [

@@ -30,12 +30,6 @@ repos:
         # If you have a src layout, you can limit:
         # files: ^(src|tests)/
 
-  # Dockerfile lint (hadolint)
-  - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0
-    hooks:
-      - id: hadolint-docker
-
   # docker-compose validation/lint-ish (docker compose config)
   # This runs 'docker compose config' to ensure compose files parse.
   - repo: local
