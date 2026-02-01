@@ -1,7 +1,6 @@
 from urllib3.util.retry import Retry
-from typing import Any, Dict, List, Iterator
 from requests import Session, adapters, HTTPError
-import time
+import math
 from config import NOAAConfig
 
 
@@ -28,7 +27,7 @@ class NOAAClient:
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
 
-    def __fetch(self, start_date: str, end_date: str, limit: int, offset: int = 1):
+    def __page(self, start_date: str, end_date: str, limit: int, offset: int = 1):
         headers = {"token": self.cfg.token}
 
         params: dict[str, str] = {
@@ -57,29 +56,14 @@ class NOAAClient:
             )
 
         payload = resp.json()
-        return payload.get("results") or []
+        return payload.get("results") or [], payload.get("metadata", {}).get(
+            "resultset", {}
+        ).get("count", 0)
 
-    def fetch_date_range(
-        self,
-        start_date: str,
-        end_date: str,
-    ) -> Iterator[List[Dict[str, Any]]]:
-        offset = 1
-        while True:
-            rows = self.__fetch(start_date, end_date, self.cfg.default_limit, offset)
-            yield rows
+    def fetch_number_of_pages(self, start_date: str, end_date: str):
+        _, meta = self.__page(start_date, end_date, self.cfg.default_limit, 1)
+        return math.ceil(meta / self.cfg.default_limit)
 
-            if not rows:
-                break
-
-            if len(rows) < self.cfg.default_limit:
-                break
-
-            offset += self.cfg.default_limit
-            if self.cfg.sleep_s:
-                time.sleep(self.cfg.sleep_s)
-
+    def get_page(self, start_date: str, end_date: str, limit: int, offset: int = 1):
+        rows, _ = self.__page(start_date, end_date, limit, offset)
         return rows
-
-    def fetch_sample(self, start_date: str, end_date: str, limit: int = 10):
-        return self.__fetch(start_date, end_date, limit)

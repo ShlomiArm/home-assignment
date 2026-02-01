@@ -11,28 +11,41 @@ services:
     environment:
       NOAA_TOKEN: ${NOAA_TOKEN}
       PIPELINE_START_DAY: ${PIPELINE_START_DAY:-2010-05-01}
-      PIPELINE_DAYS_TO_INGEST: ${PIPELINE_DAYS_TO_INGEST:-30}
+      PIPELINE_END_DAY: ${PIPELINE_END_DAY:-2010-05-31}
+
+      # Make sure Ivy writes somewhere writable
       HOME: /opt
+      SPARK_SUBMIT_OPTS: >-
+        -Divy.cache.dir=/opt/ivy
+        -Divy.home=/opt/ivy
+
+      # Use system python in the container unless you really have /opt/venv
       PYSPARK_PYTHON: python3
       PYSPARK_DRIVER_PYTHON: python3
+
     command:
-      - spark-submit
+      - /opt/spark/bin/spark-submit
+      - --master
+      - local[4]
+      - --driver-memory
+      - 4g
+
+      # Force Spark packages cache to the mounted volume
       - --conf
       - spark.jars.ivy=/opt/ivy
       - --conf
       - spark.driver.extraJavaOptions=-Divy.cache.dir=/opt/ivy -Divy.home=/opt/ivy
       - --conf
       - spark.executor.extraJavaOptions=-Divy.cache.dir=/opt/ivy -Divy.home=/opt/ivy
-      - --master
-      - local[4]
-      - --driver-memory
-      - 4g
+
       - --conf
       - spark.sql.shuffle.partitions=4
       - --conf
       - spark.default.parallelism=4
+
       - --packages
       - org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.6.1,org.apache.hadoop:hadoop-aws:3.3.4
+
       - --conf
       - spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
       - --conf
@@ -40,11 +53,12 @@ services:
       - --conf
       - spark.sql.catalog.iceberg.catalog-impl=org.apache.iceberg.rest.RESTCatalog
       - --conf
-      - spark.sql.catalog.iceberg.uri=http://rest:8183
+      - spark.sql.catalog.iceberg.uri=http://iceberg-rest:8183
       - --conf
       - spark.sql.catalog.iceberg.io-impl=org.apache.iceberg.hadoop.HadoopFileIO
       - --conf
       - spark.sql.catalog.iceberg.warehouse=s3a://iceberg/
+
       - --conf
       - spark.hadoop.fs.s3a.endpoint=http://minio:9000
       - --conf
@@ -59,7 +73,13 @@ services:
       - spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem
       - --conf
       - spark.hadoop.fs.s3a.aws.credentials.provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
-      - src/main.py
+
+      # Python import path for executors
+      - --conf
+      - spark.executorEnv.PYTHONPATH=/opt/app/src
+
+      # Run your app from the mounted repo
+      - /opt/app/src/main.py
 
 volumes:
   ivy_cache:

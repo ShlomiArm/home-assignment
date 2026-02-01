@@ -1,11 +1,13 @@
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, Row
 from noaa import NOAAClient
-from config import PipelineConfig
-from utils import date_ranges
+from config import PipelineConfig, NOAAConfig
 from pyspark.sql import DataFrame
-from typing import Tuple
+import os
+from typing import Tuple, Iterator
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType
 from pyspark.storagelevel import StorageLevel
+import sys
+import socket
 from pyspark.sql.functions import (
     col,
     lit,
@@ -18,6 +20,9 @@ from pyspark.sql.functions import (
     max,
     sum,
 )
+
+pid = os.getpid()
+host = socket.gethostname()
 
 
 def normalize_and_validate(df: DataFrame) -> Tuple[DataFrame, DataFrame]:
@@ -200,42 +205,79 @@ class Pipeline:
             WHEN NOT MATCHED THEN INSERT *
         """)
 
-    def ingest(self, startdate: str, totaldays: int):
-        def __push(buffer):
-            df = self._spark.createDataFrame(buffer, schema=self.RAW_SCHEMA)
-            good, bad = normalize_and_validate(df)
-            good_p = good.persist(StorageLevel.MEMORY_AND_DISK)
-            bad_p = bad.persist(StorageLevel.MEMORY_AND_DISK)
-            good_has = len(good_p.take(1)) > 0
-            bad_has = len(bad_p.take(1)) > 0
+    def ingest(self, startdate: str, enddate: str):
+        sc = self._spark.sparkContext
+        pages_acc = sc.accumulator(0)
+        num_pages = self._noaa.fetch_number_of_pages(startdate, enddate)
+        offsets = [1 + i * NOAAConfig().default_limit for i in range(num_pages)]
+        print(f"xxxxxxxxxxxxxxxxxxxxxxxx offsets={offsets}")
+        print(f"xxxxxxxxxxxxxxxxxxxxxxxx num_pages={num_pages}")
 
-            if good_has:
-                print("start write good xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", len(chunk))
-                (
-                    good.writeTo(
-                        f"{self._cfg.catalog}.{self._cfg.db}.{self._cfg.good_table_name}"
-                    ).overwritePartitions()
+        def fetch_partition(offsets: Iterator[int]) -> Iterator[Row]:
+            """
+            One NOAAClient per Spark partition
+            """
+            client = NOAAClient(NOAAConfig())
+
+            def log(msg: str):
+                # stderr tends to show up more reliably in Spark logs
+                print(
+                    f"[FETCH host={host} pid={pid}] {msg}", file=sys.stderr, flush=True
                 )
-                print("done write good xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-            if bad_has:
-                print("start write bad xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                bad.writeTo(
-                    f"{self._cfg.catalog}.{self._cfg.db}.{self._cfg.bad_table_name}"
-                ).append()
-                print("done write bad xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-            good_p.unpersist()
-            bad_p.unpersist()
 
-        for startday, endday in date_ranges(startdate, totaldays, self._cfg.chunkdays):
-            while True:
-                chunk = []
-                for batch in self._noaa.fetch_date_range(startday, endday):
-                    chunk += batch
-                    print(
-                        f"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx {startday, endday} reading {len(chunk)}"
+            fetched_pages = 0
+            pages_acc.add(1)  # accumulate page fetch
+
+            for offset in offsets:
+                fetched_pages += 1
+                log(f"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx offset={offset}")
+                rows = client.get_page(
+                    os.getenv("PIPELINE_START_DAY", "2010-05-01"),
+                    os.getenv("PIPELINE_END_DAY", "2010-05-31"),
+                    client.cfg.default_limit,
+                    offset,
+                )
+                for r in rows:
+                    yield Row(
+                        date=r["date"],
+                        datatype=r.get("datatype"),
+                        station=r.get("station"),
+                        attributes=r.get("attributes"),
+                        value=r.get("value"),
                     )
-                __push(chunk)
-                break
+
+        rdd = self._spark.sparkContext.parallelize(offsets, 10)
+
+        df_raw = self._spark.createDataFrame(
+            rdd.mapPartitions(fetch_partition),
+            schema=self.RAW_SCHEMA,
+        )
+
+        df_raw.limit(1).collect()
+        print(f"pages fetched = {pages_acc.value}/{num_pages}", flush=True)
+
+        good, bad = normalize_and_validate(df_raw)
+        good_p = good.persist(StorageLevel.MEMORY_AND_DISK)
+        bad_p = bad.persist(StorageLevel.MEMORY_AND_DISK)
+        good_has = len(good_p.take(1)) > 0
+        bad_has = len(bad_p.take(1)) > 0
+
+        if good_has:
+            print("start write good xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+            (
+                good.writeTo(
+                    f"{self._cfg.catalog}.{self._cfg.db}.{self._cfg.good_table_name}"
+                ).overwritePartitions()
+            )
+            print("done write good xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        if bad_has:
+            print("start write bad xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+            bad.writeTo(
+                f"{self._cfg.catalog}.{self._cfg.db}.{self._cfg.bad_table_name}"
+            ).append()
+            print("done write bad xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        good_p.unpersist()
+        bad_p.unpersist()
 
     def transform(self):
         def __get_last_watermark() -> int:

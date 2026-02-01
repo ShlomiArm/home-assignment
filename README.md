@@ -117,7 +117,7 @@ Invalid rows → **bad table**
 ```bash
   NOAA_TOKEN: ${NOAA_TOKEN}
   PIPELINE_START_DAY: ${PIPELINE_START_DAY:-2010-05-01}
-  PIPELINE_DAYS_TO_INGEST: ${PIPELINE_DAYS_TO_INGEST:-30}
+  PIPELINE_END_DAY: ${PIPELINE_END_DAY:-2010-05-31}
 ```
 
 - **`NOAA_TOKEN`** *(required)*
@@ -127,11 +127,8 @@ Invalid rows → **bad table**
 - **`PIPELINE_START_DAY`** *(optional, default: `2010-05-01`)*
   Start date for ingestion, in `YYYY-MM-DD` format.
 
-- **`PIPELINE_DAYS_TO_INGEST`** *(optional, default: `30`)*
-  Number of days to ingest starting from `PIPELINE_START_DAY`.
-
-If `PIPELINE_START_DAY` or `PIPELINE_DAYS_TO_INGEST` are not set, the pipeline will ingest
-**30 days starting from `2010-05-01`**.
+- **`PIPELINE_END_DAY`** *(optional, default: `30`)*
+  End date for ingestion, in `YYYY-MM-DD` format.
 
 ### Key Config Files
 - `config.py`
@@ -156,7 +153,7 @@ docker-compose build
 
 docker-compose -f datalake/trino/docker-compose.yaml up
 
-PIPELINE_START_DAY = <OPTIONAL. Default is `2010-05-01`> -e PIPELINE_DAYS_TO_INGEST = <OPTIONAL. Default is `30`> docker-compose up
+PIPELINE_START_DAY = <OPTIONAL. Default is `2010-05-01`> -e PIPELINE_END_DAY = <OPTIONAL. Default is `2010-05-31`> docker-compose up
 ```
 
 Default behavior in `main.py`:
@@ -198,7 +195,6 @@ Creates schemas and Iceberg tables if they do not exist.
 
 
 ## ToDo (did not had the time...)
- - ingest paralel days
  - Sanity checks:
     - check for missing days
     - compare num of rows per day to Noaa num of rows

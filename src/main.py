@@ -13,12 +13,12 @@ def init(pipeline: Pipeline):
     pipeline.init()
 
 
-def ingest(pipeline: Pipeline, startdate: str, totaldays: int):
+def ingest(pipeline: Pipeline, startdate: str, enddate: str):
     """
     This function is used to ingest data from the usgs earthquake api source to an iceberg table.
     :return:
     """
-    pipeline.ingest(startdate, totaldays)
+    pipeline.ingest(startdate, enddate)
 
 
 def transform(
@@ -48,7 +48,7 @@ def main():
     ingest(
         p,
         startdate=os.getenv("PIPELINE_START_DAY"),
-        totaldays=int(os.getenv("PIPELINE_DAYS_TO_INGEST")),
+        enddate=os.getenv("PIPELINE_END_DAY"),
     )
     transform(p)
     # maintain(p)
