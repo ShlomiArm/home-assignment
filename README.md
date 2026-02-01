@@ -1,76 +1,183 @@
-# Data Engineer – Home Assignment
+# NOAA PRECIP_15 → Apache Iceberg Pipeline
 
-## **1. Scenario**
+This project implements a **batch data pipeline** that ingests historical precipitation data from the **NOAA PRECIP_15 dataset**, validates and normalizes it using **PySpark**, and writes the results directly into **Apache Iceberg tables** stored on **S3-compatible storage (MinIO)**.
 
-Build a data pipeline that ingests **a month worth of precipitation data** from the **NOAA (National Oceanic & Atmoshperic Administration)** API writes it **directly into an Apache Iceberg table** and transforms the data.
-
-Note: This dataset is stale, Choose a year with at least 3 monthes worth of data (for example 2010)
-
-Getting started (obtain a token):
-https://www.ncdc.noaa.gov/cdo-web/webservices/v2#gettingStarted
-
-`www.ncei.noaa.gov/cdo-web/api/v2/data?datasetid=PRECIP_15`
+The pipeline is designed to be **idempotent**, **schema-aware**, and runnable via `spark-submit`.
 
 ---
 
-# **2. Requirements**
+## High-Level Architecture
 
-## **Ingestion Pipeline**
-
-* Apply these **3 required normalizations**:
-
-  1. **Expand concatenated strings to arrays**
-  2. **Convert all timestamps to ms epoch**
-  3. **Add an ingestion timestamp column**
-
-* Write the normalized data directly into an Iceberg table stored in MinIO (S3 API).
-* Use clean, modular OOP Python.
-* Apply strict validation for data based on the public schema.
-
-## **Transformation Pipeline**
-Implement the following transformation:
-### Track Proportion of Missing Data per Station
-The database must include a table that stores, for each station, the proportion of observations where the recorded value equals 99999.
-The table must include:
-* Station identifier
-* Total number of observations
-* Number of missing/invalid observations (value = 99999)
-* Percentage of missing data
-
-**Apply the transformation on new data only**
-
-## **Maintenance Pipeline**
-Inspect the Iceberg table and apply necessary maintenance actions such as snapshot management, file optimization, and metadata cleanup.
-
-## **Datalake Intialization**
-
-**Include all required DDLs for initializing your complete datalake schema**
-
-## **Docker**
-
-* Provide **one Dockerfile** that builds the pipeline image based on the `src/main.py`.
----
-
-# **3. Architecture Diagram (the real deal)**
-Consider this basic data flow as a prototype for production purposes.
-Add a simple diagram describing the data flow with the modifications needed to support production grade systems.
-Focus on relations and structures.
-Any format acceptable.
+```
+NOAA API
+   |
+   v
+NOAAClient (HTTP + retries)
+   |
+   v
+PySpark Batch Pipeline
+   |
+   |-- Validation & Normalization
+   |-- Bad-record isolation
+   |-- Incremental aggregation
+   v
+Apache Iceberg (MinIO / S3)
+```
 
 ---
 
-# **4. SQL Sanity Checks**
-Provide an SQL queries proving the data is ingested correctly.
-Provide an SQL query proving the trasformed data is valid.
+## Data Model & Tables
+
+All tables are created automatically during `init()`.
+
+### 1. Good Records Table
+**`<catalog>.<db>.good`**
+
+Stores validated and normalized precipitation observations.
+
+Columns:
+- `eventtime` (TIMESTAMP)
+- `datatype` (STRING)
+- `station` (STRING)
+- `attributes_arr` (ARRAY<STRING>)
+- `value` (INT)
+- `date_epoch_ms` (BIGINT)
+- `ingestion_ts` (BIGINT)
+
+Partitioning:
+- `days(eventtime)`
 
 ---
 
-# **5. Submission**
+### 2. Bad Records Table
+**`<catalog>.<db>.bad`**
 
-Submit a Git repository containing:
+Stores rows that failed validation, along with the failure reason.
 
-* Python code
-* Dockerfile for the pipeline
-* Architecture diagram
-* SQL queries
-* README with run instructions
+Columns:
+- `date` (STRING)
+- `datatype` (STRING)
+- `station` (STRING)
+- `attributes` (STRING)
+- `value` (INT)
+- `bad_reason` (STRING)
+- `ingestion_ts` (BIGINT)
+
+---
+
+### 3. Missing Metrics Table
+**`<catalog>.<db>.missing_metrics`**
+
+Incremental per-station quality metrics.
+
+Columns:
+- `station`
+- `total_observations`
+- `missing_observations`
+- `missing_pct`
+- `updated_at_ms`
+
+Missing values are defined as `value = 99999`.
+
+---
+
+### 4. Pipeline State Table
+**`<catalog>.<db>.pipeline_state`**
+
+Tracks ingestion watermark to ensure incremental transforms.
+
+Columns:
+- `pipeline_name`
+- `last_ingestion_ts_ms`
+- `updated_at_ms`
+
+---
+
+## Validation & Normalization Rules
+
+Applied during ingestion:
+
+1. Parse `date` into a proper timestamp (`eventtime`)
+2. Convert timestamps to **epoch milliseconds**
+3. Split comma-separated `attributes` into arrays
+4. Add ingestion timestamp
+5. Validate:
+   - Required fields present
+   - Timestamp parseable
+   - `value >= 0`
+
+Valid rows → **good table**
+Invalid rows → **bad table**
+
+---
+
+## Configuration
+
+### Environment Variable
+```bash
+export NOAA_TOKEN=<your_noaa_api_token>
+```
+
+### Key Config Files
+- `config.py`
+  - `NOAAConfig`: API settings, token, retries
+  - `PipelineConfig`: table names, chunk size, retention
+  - `SparkConfig`: Iceberg + MinIO configuration
+- `client.py`: NOAA API client with retries & pagination
+- `pipeline.py`: core pipeline logic
+- `utils.py`: date range utilities
+
+---
+
+## How to Run
+
+### 1. Start Required Services
+Make sure the following are running:
+- MinIO (S3-compatible storage)
+- Iceberg REST Catalog
+
+### 2. Run the Pipeline
+```bash
+
+docker compose -f datalake/trino/docker-compose.yaml up
+
+export NOAA_TOKEN=your_token_here
+docker compose up
+```
+
+Default behavior in `main.py`:
+- Initializes Iceberg schema
+- Ingests **30 days starting from 2010-05-01**
+- Runs transformation logic
+
+---
+
+## Pipeline Stages
+
+### init()
+Creates schemas and Iceberg tables if they do not exist.
+
+### ingest(startdate, totaldays)
+- Fetches NOAA data in **non-overlapping date chunks**
+- Validates & normalizes records
+- Writes:
+  - good data → overwrite partitions
+  - bad data → append
+
+### transform()
+- Reads new records since last watermark
+- Updates missing-value metrics incrementally
+- Advances watermark
+
+### maintain() (optional)
+- Compacts small Iceberg files
+- Expires old snapshots
+
+---
+
+## Design Notes
+
+- Uses **overwritePartitions()** to guarantee idempotent writes
+- Chunked ingestion prevents memory pressure
+- Retry-enabled HTTP client for NOAA API limits
+- Iceberg used for ACID guarantees and schema evolution
