@@ -152,14 +152,11 @@ Make sure the following are running:
 
 ### 2. Run the Pipeline
 ```bash
+docker-compose build
 
 docker-compose -f datalake/trino/docker-compose.yaml up
 
-export NOAA_TOKEN= <NOAA Token. Requierd>
-export PIPELINE_START_DAY = <OPTIONAL. Default is `2010-05-01`>
-export PIPELINE_DAYS_TO_INGEST = <OPTIONAL. Default is `30`>
-
-docker-compose up --build
+PIPELINE_START_DAY = <OPTIONAL. Default is `2010-05-01`> -e PIPELINE_DAYS_TO_INGEST = <OPTIONAL. Default is `30`> docker-compose up
 ```
 
 Default behavior in `main.py`:
@@ -198,3 +195,13 @@ Creates schemas and Iceberg tables if they do not exist.
 - Chunked ingestion prevents memory pressure
 - Retry-enabled HTTP client for NOAA API limits
 - Iceberg used for ACID guarantees and schema evolution
+
+
+## ToDo (did not had the time...)
+ - ingest paralel days
+ - Sanity checks:
+    - check for missing days
+    - compare num of rows per day to Noaa num of rows
+    - check for value range
+    - check that the pipeline state last update is up to date
+    - check no records in the bad table

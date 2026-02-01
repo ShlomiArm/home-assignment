@@ -202,7 +202,7 @@ class Pipeline:
 
     def ingest(self, startdate: str, totaldays: int):
         def __push(buffer):
-            df = self._spark.createDataFrame(chunk, schema=self.RAW_SCHEMA)
+            df = self._spark.createDataFrame(buffer, schema=self.RAW_SCHEMA)
             good, bad = normalize_and_validate(df)
             good_p = good.persist(StorageLevel.MEMORY_AND_DISK)
             bad_p = bad.persist(StorageLevel.MEMORY_AND_DISK)
@@ -243,8 +243,9 @@ class Pipeline:
                 self._spark.table(
                     f"{self._cfg.catalog}.{self._cfg.db}.{self._cfg.pipeline_state_name}"
                 )
-                .filter(col("pipeline_name") == "{self.pipeline_state_name}")
+                .filter(col("pipeline_name") == lit(self._cfg.pipeline_state_name))
                 .select("last_ingestion_ts_ms")
+                .limit(1)
                 .collect()
             )
             return int(row[0]["last_ingestion_ts_ms"]) if row else 0
