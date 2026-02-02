@@ -148,13 +148,20 @@ Make sure the following are running:
 - Iceberg REST Catalog
 
 ### 2. Run the Pipeline
-```bash
-docker-compose build
 
-docker-compose -f datalake/trino/docker-compose.yaml up
+set .env file:
+- **required**- NOAA_TOKEN="Your Token"
+- **optional**- PIPELINE_START_DAY="Ingest Start Day"
+- **optional**- PIPELINE_END_DAY="Ingest Stop Day"
 
-PIPELINE_START_DAY = <OPTIONAL. Default is `2010-05-01`> -e PIPELINE_END_DAY = <OPTIONAL. Default is `2010-05-31`> docker-compose up
-```
+Run:
+  ```bash
+  docker-compose build
+
+  docker-compose -f datalake/trino/docker-compose.yaml up
+
+  docker-compose up
+  ```
 
 Default behavior in `main.py`:
 - Initializes Iceberg schema
